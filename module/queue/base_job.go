@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"reflect"
 
-	"github.com/adjust/rmq"
+	"github.com/adjust/rmq/v4"
 	"github.com/sayuri567/gorun"
 	"github.com/sirupsen/logrus"
 )
@@ -37,11 +37,13 @@ func newJob(name string, job Job) *BaseJob {
 func (j *BaseJob) Consume(delivery rmq.Delivery) {
 	defer gorun.Recover("panic")
 	var isRejected = false
+	var err error
 	var param = reflect.New(reflect.TypeOf(j.job).Elem())
-	err := json.Unmarshal([]byte(delivery.Payload()), param.Interface())
+	err = json.Unmarshal([]byte(delivery.Payload()), param.Interface())
 	if err != nil {
 		logrus.WithError(err).WithField("job", j.name).Error("failed to parse json message")
-		isRejected = delivery.Reject()
+		delivery.Reject()
+		isRejected = true
 		return
 	}
 	before := param.MethodByName("Before")
@@ -50,7 +52,8 @@ func (j *BaseJob) Consume(delivery rmq.Delivery) {
 		if beforeErr != nil && len(beforeErr) > 0 && !beforeErr[0].IsNil() {
 			logrus.WithField("error", beforeErr[0].Interface()).WithField("job", j.name).Error("run job before function has error")
 			// 执行准备工作方法时出错，驳回消息，尝试重试
-			isRejected = delivery.Reject()
+			delivery.Reject()
+			isRejected = true
 			return
 		}
 	}
@@ -58,14 +61,16 @@ func (j *BaseJob) Consume(delivery rmq.Delivery) {
 	if program.Kind() != reflect.Func {
 		logrus.WithError(err).WithField("job", j.name).Error("job has no program function")
 		// 找不到Program方法，驳回消息
-		isRejected = delivery.Reject()
+		delivery.Reject()
+		isRejected = true
 		return
 	}
 	programErr := program.Call(nil)
 	if programErr != nil && len(programErr) > 0 && !programErr[0].IsNil() {
 		logrus.WithField("error", programErr[0].Interface()).WithField("job", j.name).Error("run job program function has error")
 		// 执行Program出错，驳回消息，并执行after方法
-		isRejected = delivery.Reject()
+		delivery.Reject()
+		isRejected = true
 	}
 
 	after := param.MethodByName("After")

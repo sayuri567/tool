@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/adjust/rmq"
-	"github.com/go-redis/redis"
+	"github.com/adjust/rmq/v4"
+	"github.com/go-redis/redis/v8"
 	"github.com/sayuri567/tool/module"
 	"github.com/sirupsen/logrus"
 )
@@ -22,19 +22,21 @@ type QueueModule struct {
 	redisClient   *redis.Client
 	rmqConn       rmq.Connection
 	startConsumer bool
+	errChan       chan error
 }
 
 type topic struct {
 	name           string
 	job            Job
-	prefetchLimits int
+	prefetchLimits int64
 	pollDuration   time.Duration
 	consumerCount  int
 }
 
 var queueModule = &QueueModule{
-	queues: make(map[string]rmq.Queue),
-	topics: make(map[string]*topic),
+	queues:  make(map[string]rmq.Queue),
+	topics:  make(map[string]*topic),
+	errChan: make(chan error),
 }
 
 func GetQueueModule() *QueueModule {
@@ -61,9 +63,17 @@ func (this *QueueModule) Init() error {
 	if queueModule.redisClient == nil {
 		return errors.New("redis config not set")
 	}
-	this.rmqConn = rmq.OpenConnectionWithRedisClient(this.id, queueModule.redisClient)
+	var err error
+	this.rmqConn, err = rmq.OpenConnectionWithRedisClient(this.id, queueModule.redisClient, this.errChan)
+	if err != nil {
+		return err
+	}
+	handlerError(this.errChan)
 	for name, topic := range this.topics {
-		this.queues[name] = this.rmqConn.OpenQueue(name)
+		this.queues[name], err = this.rmqConn.OpenQueue(name)
+		if err != nil {
+			return err
+		}
 
 		if this.startConsumer {
 			this.queues[name].StartConsuming(topic.prefetchLimits, topic.pollDuration)
@@ -116,9 +126,9 @@ func Push(key string, msg interface{}) error {
 	if _, ok := queueModule.queues[key]; !ok {
 		return fmt.Errorf("unknown queue %v", key)
 	}
-	res := queueModule.queues[key].PublishBytes(taskBytes)
-	if res == false {
-		return fmt.Errorf("failed to push message queue")
+	err = queueModule.queues[key].PublishBytes(taskBytes)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -126,7 +136,7 @@ func Push(key string, msg interface{}) error {
 // Clean Clean
 func Clean() error {
 	cleaner := rmq.NewCleaner(queueModule.rmqConn)
-	err := cleaner.Clean()
+	_, err := cleaner.Clean()
 	if err != nil {
 		logrus.WithError(err).Error("failed to clean consumer")
 	}
@@ -134,7 +144,7 @@ func Clean() error {
 }
 
 // Status 队列状态
-func Status() rmq.Stats {
+func Status() (rmq.Stats, error) {
 	list := []string{}
 	for name := range queueModule.queues {
 		list = append(list, name)
@@ -154,7 +164,7 @@ func AddTopic(topicName string, job Job, prefetchLimits, consumerCount int, poll
 	queueModule.topics[topicName] = &topic{
 		name:           topicName,
 		job:            job,
-		prefetchLimits: prefetchLimits,
+		prefetchLimits: int64(prefetchLimits),
 		consumerCount:  consumerCount,
 		pollDuration:   pollDuration,
 	}

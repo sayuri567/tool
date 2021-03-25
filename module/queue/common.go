@@ -3,7 +3,7 @@ package queue
 import (
 	"time"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	"github.com/sayuri567/gorun"
 	"github.com/sirupsen/logrus"
 )
@@ -56,7 +56,7 @@ func cleanWorker() {
 func autoReturnRejected() {
 	go func() {
 		defer gorun.Recover("panic")
-		errorCount := map[string]int{}
+		errorCount := map[string]int64{}
 		retryCount := map[string]int{}
 		// TODO 无法辨别哪条消息错误几次，所以统一重试3次，然后丢弃
 		for {
@@ -66,11 +66,12 @@ func autoReturnRejected() {
 			case <-timer.C:
 				for key, q := range queueModule.queues {
 					if retryCount[key] > 2 {
-						logrus.WithField("msgCount", q.PurgeRejected()).Error("retry 3 times for there messages, pruge it")
+						msgCount, _ := q.PurgeRejected()
+						logrus.WithField("msgCount", msgCount).Error("retry 3 times for there messages, pruge it")
 						retryCount[key] = 0
 						continue
 					}
-					errorCount[key] = q.ReturnRejected(100)
+					errorCount[key], _ = q.ReturnRejected(100)
 					if errorCount[key] > 0 {
 						retryCount[key]++
 						logrus.WithField("msgCount", errorCount[key]).WithField("retryCount", retryCount[key]).Warn("return rejected message to ready")
@@ -84,4 +85,13 @@ func autoReturnRejected() {
 			}
 		}
 	}()
+}
+
+func handlerError(errChan chan error) {
+	gorun.Go(func() {
+		for err := range errChan {
+			// TODO
+			logrus.WithError(err).Error("queue error")
+		}
+	})
 }
