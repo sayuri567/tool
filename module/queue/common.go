@@ -1,4 +1,4 @@
-package job
+package queue
 
 import (
 	"time"
@@ -23,7 +23,7 @@ var (
 	quitReturnRejected = make(chan int)
 )
 
-func getQueueClient(config *Config) *redis.Client {
+func getRedisClient(config *Config) *redis.Client {
 	return redis.NewClient(&redis.Options{
 		Network:     "tcp",
 		Addr:        config.Address,
@@ -64,7 +64,7 @@ func autoReturnRejected() {
 			timer = time.NewTimer(10 * time.Second)
 			select {
 			case <-timer.C:
-				for key, q := range queueManager.queues {
+				for key, q := range queueModule.queues {
 					if retryCount[key] > 2 {
 						logrus.WithField("msgCount", q.PurgeRejected()).Error("retry 3 times for there messages, pruge it")
 						retryCount[key] = 0

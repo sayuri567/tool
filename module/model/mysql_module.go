@@ -11,7 +11,7 @@ import (
 	gorp "gopkg.in/gorp.v1"
 )
 
-type MysqlManager struct {
+type MysqlModule struct {
 	*module.DefaultModule
 	modelMap      map[string][]modelMapItem
 	callbacks     []func()
@@ -45,25 +45,25 @@ type dbConnectionStringGetter interface {
 }
 
 // 单例
-var mysqlManager = &MysqlManager{
+var mysqlModule = &MysqlModule{
 	modelMap:  make(map[string][]modelMapItem),
 	callbacks: make([]func(), 0),
 	inited:    false,
 }
 
-func GetMysqlManager() *MysqlManager {
-	return mysqlManager
+func GetMysqlModule() *MysqlModule {
+	return mysqlModule
 }
 
 func SetConnStrGetter(getter dbConnectionStringGetter) {
-	mysqlManager.connStrGetter = getter
+	mysqlModule.connStrGetter = getter
 }
 
-func (this *MysqlManager) Init() error {
+func (this *MysqlModule) Init() error {
 	if this.connStrGetter == nil {
 		return errors.New("connStrGetter not set")
 	}
-	for dbKey := range this.modelMap {
+	for dbKey, mapItems := range this.modelMap {
 		db, err := sql.Open("mysql", this.connStrGetter.GetDbConnectionString(dbKey))
 		if err != nil {
 			return err
@@ -79,41 +79,36 @@ func (this *MysqlManager) Init() error {
 		if this.enableDbTrace {
 			dbMap.TraceOn("", &dbLogger{})
 		}
-		mapItems, ok := this.modelMap[dbKey]
-		if ok {
-			for _, mi := range mapItems {
-				mi.model.SetDbMap(dbMap)
-				mi.model.SetDb(db)
-				err = mi.model.Initer(dbMap, mi.obj, mi.model.GetTable())
-				if err != nil {
-					return err
-				}
-				mi.model.SetModel(mi.model)
-				mi.model.SetFields(GetAllFieldsAsString(mi.obj))
+		for _, mi := range mapItems {
+			mi.model.SetDbMap(dbMap)
+			mi.model.SetDb(db)
+			err = mi.model.Initer(dbMap, mi.obj, mi.model.GetTable())
+			if err != nil {
+				return err
 			}
+			mi.model.SetModel(mi.model)
+			mi.model.SetFields(GetAllFieldsAsString(mi.obj))
 		}
 	}
-	this.modelMap = nil
 
 	this.inited = true
 	for _, callback := range this.callbacks {
 		callback()
 	}
 
+	logrus.Info("mysql module inited")
 	return nil
 }
 
-func (this *MysqlManager) Stop() {
+func (this *MysqlModule) Stop() {
 	logrus.Info("Stopping mysql connects")
-	for dbKey := range this.modelMap {
-		mapItems, ok := this.modelMap[dbKey]
-		if ok {
-			for _, mi := range mapItems {
-				err := mi.model.Db().Close()
-				if err != nil {
-					logrus.Error(err.Error())
-				}
+	for _, mapItems := range this.modelMap {
+		for _, mi := range mapItems {
+			err := mi.model.Db().Close()
+			if err != nil {
+				logrus.Error(err.Error())
 			}
+			break
 		}
 	}
 	logrus.Info("Stopped mysql connects")
@@ -121,25 +116,25 @@ func (this *MysqlManager) Stop() {
 
 // Register Register.
 func Register(dbKey string, model Model, obj interface{}) {
-	mapItems, ok := mysqlManager.modelMap[dbKey]
+	mapItems, ok := mysqlModule.modelMap[dbKey]
 	if ok {
 		for _, mi := range mapItems {
 			if model == mi.model {
 				return
 			}
-			mysqlManager.modelMap[dbKey] = append(mapItems, modelMapItem{model: model, obj: obj})
+			mysqlModule.modelMap[dbKey] = append(mapItems, modelMapItem{model: model, obj: obj})
 		}
 	} else {
 		mapItems := make([]modelMapItem, 0, 5)
-		mysqlManager.modelMap[dbKey] = append(mapItems, modelMapItem{model: model, obj: obj})
+		mysqlModule.modelMap[dbKey] = append(mapItems, modelMapItem{model: model, obj: obj})
 	}
 }
 
 // RegisterCallback RegisterCallback.
 func RegisterCallback(callback func()) {
-	if mysqlManager.inited {
+	if mysqlModule.inited {
 		callback()
 		return
 	}
-	mysqlManager.callbacks = append(mysqlManager.callbacks, callback)
+	mysqlModule.callbacks = append(mysqlModule.callbacks, callback)
 }

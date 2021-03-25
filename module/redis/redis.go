@@ -18,7 +18,7 @@ type Config struct {
 	IdleTimeout int64
 }
 
-type RedisManager struct {
+type RedisModule struct {
 	*module.DefaultModule
 
 	pools       map[string]*redigo.Pool
@@ -26,31 +26,31 @@ type RedisManager struct {
 	defaultPool string
 }
 
-var redisManager = &RedisManager{
+var redisModule = &RedisModule{
 	pools:   make(map[string]*redigo.Pool),
 	configs: make(map[string]*Config),
 }
 
-func GetRedisManager() *RedisManager {
-	return redisManager
+func GetRedisModule() *RedisModule {
+	return redisModule
 }
 
 func RegisterRedis(name string, config *Config) {
-	if len(redisManager.defaultPool) == 0 {
-		redisManager.defaultPool = name
+	if len(redisModule.defaultPool) == 0 {
+		redisModule.defaultPool = name
 	}
-	redisManager.configs[name] = config
+	redisModule.configs[name] = config
 }
 
 func Get() *redigo.Pool {
-	return redisManager.pools[redisManager.defaultPool]
+	return redisModule.pools[redisModule.defaultPool]
 }
 
 func GetConn(name string) *redigo.Pool {
-	return redisManager.pools[name]
+	return redisModule.pools[name]
 }
 
-func (this *RedisManager) Init() error {
+func (this *RedisModule) Init() error {
 	var err error
 	for name, config := range this.configs {
 		this.pools[name] = this.newPool(config)
@@ -62,10 +62,15 @@ func (this *RedisManager) Init() error {
 		}
 	}
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	logrus.Info("redis module inited")
+	return nil
 }
 
-func (this *RedisManager) Stop() {
+func (this *RedisModule) Stop() {
 	logrus.Info("Stopping redis connects")
 	for name, pool := range this.pools {
 		err := pool.Close()
@@ -76,7 +81,7 @@ func (this *RedisManager) Stop() {
 	logrus.Info("Stopped redis connects")
 }
 
-func (this *RedisManager) newPool(config *Config) *redigo.Pool {
+func (this *RedisModule) newPool(config *Config) *redigo.Pool {
 	return &redigo.Pool{
 		MaxIdle:     config.MaxIdle,
 		MaxActive:   config.MaxActive,

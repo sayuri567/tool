@@ -1,4 +1,4 @@
-package job
+package queue
 
 import (
 	"encoding/json"
@@ -13,7 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type QueueManager struct {
+type QueueModule struct {
 	*module.DefaultModule
 
 	id            string
@@ -32,36 +32,36 @@ type topic struct {
 	consumerCount  int
 }
 
-var queueManager = &QueueManager{
+var queueModule = &QueueModule{
 	queues: make(map[string]rmq.Queue),
 	topics: make(map[string]*topic),
 }
 
-func GetQueueManager() *QueueManager {
-	return queueManager
+func GetQueueModule() *QueueModule {
+	return queueModule
 }
 
 func SetQueueRedisConfig(config *Config) {
-	queueManager.redisClient = getQueueClient(config)
+	queueModule.redisClient = getRedisClient(config)
 }
 
 func SetQueueRedisClient(client *redis.Client) {
-	queueManager.redisClient = client
+	queueModule.redisClient = client
 }
 
 func SetId(id string) {
-	queueManager.id = id
+	queueModule.id = id
 }
 
 func StartConsuming() {
-	queueManager.startConsumer = true
+	queueModule.startConsumer = true
 }
 
-func (this *QueueManager) Init() error {
-	if queueManager.redisClient == nil {
+func (this *QueueModule) Init() error {
+	if queueModule.redisClient == nil {
 		return errors.New("redis config not set")
 	}
-	this.rmqConn = rmq.OpenConnectionWithRedisClient(this.id, queueManager.redisClient)
+	this.rmqConn = rmq.OpenConnectionWithRedisClient(this.id, queueModule.redisClient)
 	for name, topic := range this.topics {
 		this.queues[name] = this.rmqConn.OpenQueue(name)
 
@@ -79,10 +79,11 @@ func (this *QueueManager) Init() error {
 		cleanWorker()
 	}
 
+	logrus.Info("queue module inited")
 	return nil
 }
 
-func (this *QueueManager) Stop() {
+func (this *QueueModule) Stop() {
 	if !this.startConsumer {
 		return
 	}
@@ -112,10 +113,10 @@ func Push(key string, msg interface{}) error {
 	if err != nil {
 		return err
 	}
-	if _, ok := queueManager.queues[key]; !ok {
+	if _, ok := queueModule.queues[key]; !ok {
 		return fmt.Errorf("unknown queue %v", key)
 	}
-	res := queueManager.queues[key].PublishBytes(taskBytes)
+	res := queueModule.queues[key].PublishBytes(taskBytes)
 	if res == false {
 		return fmt.Errorf("failed to push message queue")
 	}
@@ -124,7 +125,7 @@ func Push(key string, msg interface{}) error {
 
 // Clean Clean
 func Clean() error {
-	cleaner := rmq.NewCleaner(queueManager.rmqConn)
+	cleaner := rmq.NewCleaner(queueModule.rmqConn)
 	err := cleaner.Clean()
 	if err != nil {
 		logrus.WithError(err).Error("failed to clean consumer")
@@ -135,10 +136,10 @@ func Clean() error {
 // Status 队列状态
 func Status() rmq.Stats {
 	list := []string{}
-	for name := range queueManager.queues {
+	for name := range queueModule.queues {
 		list = append(list, name)
 	}
-	return queueManager.rmqConn.CollectStats(list)
+	return queueModule.rmqConn.CollectStats(list)
 }
 
 /*
@@ -150,7 +151,7 @@ func Status() rmq.Stats {
  * @params pollDuration redis检测间隔
  */
 func AddTopic(topicName string, job Job, prefetchLimits, consumerCount int, pollDuration time.Duration) error {
-	queueManager.topics[topicName] = &topic{
+	queueModule.topics[topicName] = &topic{
 		name:           topicName,
 		job:            job,
 		prefetchLimits: prefetchLimits,

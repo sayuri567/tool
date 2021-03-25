@@ -18,14 +18,20 @@ type Config struct {
 	ExtendFields map[string]string
 }
 
-// DefaultFieldHook DefaultFieldHook
-type DefaultFieldHook struct {
+// LoggerModule LoggerModule
+type LoggerModule struct {
 	*module.DefaultModule
 	config    *Config
 	formatter logrus.Formatter
 }
 
-func NewLogHookModule(config Config) *DefaultFieldHook {
+var loggerModule = &LoggerModule{}
+
+func GetLoggerModule() *LoggerModule {
+	return loggerModule
+}
+
+func SetConfig(config *Config) {
 	if len(config.TimeFormat) == 0 {
 		config.TimeFormat = "2006-01-02T15:04:05-07:00"
 	}
@@ -40,16 +46,16 @@ func NewLogHookModule(config Config) *DefaultFieldHook {
 	if len(config.Level) == 0 {
 		config.Level = logrus.DebugLevel.String()
 	}
-	return &DefaultFieldHook{config: &config}
+	loggerModule.config = config
 }
 
 // Levels Levels
-func (this *DefaultFieldHook) Levels() []logrus.Level {
+func (this *LoggerModule) Levels() []logrus.Level {
 	return logrus.AllLevels
 }
 
 // Fire Fire
-func (this *DefaultFieldHook) Fire(e *logrus.Entry) error {
+func (this *LoggerModule) Fire(e *logrus.Entry) error {
 	for key, value := range this.config.ExtendFields {
 		if _, ok := e.Data[key]; !ok {
 			e.Data[key] = value
@@ -58,9 +64,10 @@ func (this *DefaultFieldHook) Fire(e *logrus.Entry) error {
 	return nil
 }
 
-// InitLogger InitLogger
-func (this *DefaultFieldHook) Init() error {
-	// 初始化logger
+func (this *LoggerModule) Init() error {
+	if this.config == nil {
+		SetConfig(&Config{})
+	}
 	this.formatter = &logrus.JSONFormatter{
 		TimestampFormat: this.config.TimeFormat,
 		FieldMap: logrus.FieldMap{
@@ -93,18 +100,13 @@ func (this *DefaultFieldHook) Init() error {
 	return nil
 }
 
-func (this *DefaultFieldHook) newLfsHook() (logrus.Hook, error) {
+func (this *LoggerModule) newLfsHook() (logrus.Hook, error) {
 	writer, err := rotatelogs.New(
 		this.config.LogFile+".%Y%m%d%H",
-		// WithLinkName 为最新的日志建立软连接，以方便随时找到当前日志文件
 		rotatelogs.WithLinkName(this.config.LogFile),
 
-		// WithRotationTime 设置日志分割的时间，这里设置为一小时分割一次
 		rotatelogs.WithRotationTime(this.config.RotationTime),
 
-		// WithMaxAge和WithRotationCount 二者只能设置一个，
-		// WithMaxAge 设置文件清理前的最长保存时间，
-		// WithRotationCount 设置文件清理前最多保存的个数。
 		//rotatelogs.WithMaxAge(time.Hour*24),
 		rotatelogs.WithRotationCount(uint(this.config.MaxRemainCnt)),
 	)
