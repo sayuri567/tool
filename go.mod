@@ -21,6 +21,7 @@ require (
 	github.com/sayuri567/gorun v0.5.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/ziutek/mymysql v1.5.4 // indirect
+	google.golang.org/grpc v1.36.0
 	gopkg.in/bsm/ratelimit.v1 v1.0.0-20160220154919-db14e161995a // indirect
 	gopkg.in/gorp.v1 v1.7.2
 	gopkg.in/redis.v3 v3.6.4 // indirect
