@@ -34,14 +34,21 @@ type ServerModule struct {
 	server *grpc.Server
 }
 
-var serverModule = &ServerModule{}
+var serverModule = New()
 
 func GetServerModule() *ServerModule {
 	return serverModule
 }
 
+func New() *ServerModule {
+	return &ServerModule{}
+}
+
 func SetConfig(config *ServerConfig) {
-	serverModule.config = config
+	serverModule.SerConfig(config)
+}
+func (this *ServerModule) SerConfig(config *ServerConfig) {
+	this.config = config
 }
 
 func (this *ServerModule) Init() error {

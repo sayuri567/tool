@@ -7,6 +7,7 @@ require (
 	github.com/adjust/rmq v1.0.0
 	github.com/adjust/uniuri v0.0.0-20130923163420-498743145e60 // indirect
 	github.com/garyburd/redigo v1.6.2
+	github.com/gin-gonic/gin v1.6.3
 	github.com/go-redis/redis v6.15.5+incompatible
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/jonboulle/clockwork v0.2.2 // indirect
