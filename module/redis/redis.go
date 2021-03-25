@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"errors"
 	"time"
 
 	redigo "github.com/garyburd/redigo/redis"
@@ -42,16 +43,22 @@ func RegisterRedis(name string, config *Config) {
 	redisModule.configs[name] = config
 }
 
-func Get() *redigo.Pool {
-	return redisModule.pools[redisModule.defaultPool]
+func Get() redigo.Conn {
+	return redisModule.pools[redisModule.defaultPool].Get()
 }
 
-func GetConn(name string) *redigo.Pool {
-	return redisModule.pools[name]
+func GetConn(name string) redigo.Conn {
+	if pool, ok := redisModule.pools[name]; ok {
+		return pool.Get()
+	}
+	return nil
 }
 
 func (this *RedisModule) Init() error {
 	var err error
+	if len(this.configs) == 0 {
+		return errors.New("redis config not set")
+	}
 	for name, config := range this.configs {
 		this.pools[name] = this.newPool(config)
 		conn := this.pools[name].Get()
