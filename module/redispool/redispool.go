@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	redigo "github.com/garyburd/redigo/redis"
+	redigo "github.com/gomodule/redigo/redis"
 	"github.com/sayuri567/tool/module"
 	"github.com/sirupsen/logrus"
 )
