@@ -3,6 +3,7 @@ package signal
 import (
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/sayuri567/gorun"
@@ -14,7 +15,7 @@ type SignalModule struct {
 	*module.DefaultModule
 
 	signalHandles map[os.Signal]SignalHandle
-	inited        bool
+	lock          sync.RWMutex
 }
 
 type SignalHandle func() error
@@ -28,16 +29,14 @@ func GetSignalModule() *SignalModule {
 }
 
 func SetHandle(handle SignalHandle, signals ...os.Signal) {
-	if signalModule.inited {
-		return
-	}
+	signalModule.lock.Lock()
 	for _, signal := range signals {
 		signalModule.signalHandles[signal] = handle
 	}
+	signalModule.lock.Unlock()
 }
 
 func (this *SignalModule) Init() error {
-	this.inited = true
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGSTOP, syscall.SIGUSR1, syscall.SIGUSR2)
 	gorun.Go(this.checkSignal, sigs)
@@ -45,9 +44,10 @@ func (this *SignalModule) Init() error {
 }
 
 func (this *SignalModule) checkSignal(sigs chan os.Signal) {
-	for {
-		sig := <-sigs
+	for sig := range sigs {
+		signalModule.lock.RLock()
 		handle, ok := this.signalHandles[sig]
+		signalModule.lock.RUnlock()
 		if ok {
 			err := handle()
 			if err != nil {
