@@ -28,8 +28,10 @@ func GetCrontabModule() *CrontabModule {
 	return crontabModule
 }
 
-func RegisterCron(cron *Crontab) {
-	crontabModule.items = append(crontabModule.items, cron)
+func RegisterCron(crons ...*Crontab) {
+	for _, cron := range crons {
+		crontabModule.items = append(crontabModule.items, cron)
+	}
 }
 
 func (m *CrontabModule) Init() error {
