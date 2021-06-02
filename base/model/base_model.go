@@ -207,6 +207,22 @@ func (this *CommonModel) SearchInterface(page int, pageSize int, sort string, qu
 	return list, total, nil
 }
 
+func (this *CommonModel) SearchAllInterface(sort string, query map[string]string, genCondition func(map[string]string) QueryMap, dataType interface{}) ([]interface{}, error) {
+	var whereStr = " 1 "
+	var params = []interface{}{}
+	if genCondition != nil {
+		whereStr, params = GenWhere(genCondition(query))
+	}
+	orderBy := this.ParseOrder(sort)
+	sql := fmt.Sprintf("select %v from %v where `isDeleted` = 0 and %v order by %v;", this.GetFields(), this.GetModel().GetTable(), whereStr, orderBy)
+	list, err := this.DbMap().Select(dataType, sql, params...)
+	if err != nil {
+		return nil, err
+	}
+
+	return list, nil
+}
+
 // UpdateByCondition UpdateByCondition.
 func (this *CommonModel) UpdateByCondition(fields map[string]interface{}, conditions QueryMap) (int, error) {
 	if _, ok := fields["updatedTime"]; !ok {
