@@ -8,9 +8,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	gorp "gopkg.in/gorp.v1"
 )
+
+type Model interface {
+	SetDbMap(dbMap *gorp.DbMap)
+	DbMap() *gorp.DbMap
+	SetDb(db *sql.DB)
+	Db() *sql.DB
+	// 初始化结构体与数据表的绑定，如有需要，可自行实现
+	Initer(dbMap *gorp.DbMap, obj interface{}, tableName string) error
+	// 获取当前model绑定的表名
+	GetTable() string
+	SetModel(model Model)
+	SetFields(fields string)
+}
 
 // CommonModel CommonModel.
 type CommonModel struct {
@@ -305,15 +317,6 @@ func (this *SimpleModel) PreDelete(s gorp.SqlExecutor) error {
 // PostDelete 删除后.
 func (this *SimpleModel) PostDelete(s gorp.SqlExecutor) error {
 	return nil
-}
-
-// DbLogger DbLogger.
-type dbLogger struct {
-}
-
-// Printf Printf.
-func (this *dbLogger) Printf(format string, v ...interface{}) {
-	logrus.WithFields(logrus.Fields{"@type": "mysql"}).Infof(format, v...)
 }
 
 // GenFieldsStrWithTable 生成携带表明的字段sql.

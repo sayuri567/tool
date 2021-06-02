@@ -1,41 +1,29 @@
-package model
+package sqlite
 
 import (
 	"database/sql"
 	"errors"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql" // register mysql driver
+	_ "github.com/mattn/go-sqlite3" // register sqlite driver
+	"github.com/sayuri567/tool/base/model"
 	"github.com/sayuri567/tool/module"
 	"github.com/sirupsen/logrus"
 	gorp "gopkg.in/gorp.v1"
 )
 
-type MysqlModule struct {
+type SqliteModule struct {
 	*module.DefaultModule
 	modelMap      map[string][]modelMapItem
 	callbacks     []func()
 	enableDbTrace bool
 	inited        bool
 	connStrGetter dbConnectionStringGetter
-}
-
-// Model Model.
-type Model interface {
-	SetDbMap(dbMap *gorp.DbMap)
-	DbMap() *gorp.DbMap
-	SetDb(db *sql.DB)
-	Db() *sql.DB
-	// 初始化结构体与数据表的绑定，如有需要，可自行实现
-	Initer(dbMap *gorp.DbMap, obj interface{}, tableName string) error
-	// 获取当前model绑定的表名
-	GetTable() string
-	SetModel(model Model)
-	SetFields(fields string)
+	createTable   bool
 }
 
 type modelMapItem struct {
-	model Model
+	model model.Model
 	obj   interface{}
 }
 
@@ -45,26 +33,31 @@ type dbConnectionStringGetter interface {
 }
 
 // 单例
-var mysqlModule = &MysqlModule{
-	modelMap:  make(map[string][]modelMapItem),
-	callbacks: make([]func(), 0),
-	inited:    false,
+var sqliteModule = &SqliteModule{
+	modelMap:    make(map[string][]modelMapItem),
+	callbacks:   make([]func(), 0),
+	inited:      false,
+	createTable: false,
 }
 
-func GetMysqlModule() *MysqlModule {
-	return mysqlModule
+func GetSqliteModule() *SqliteModule {
+	return sqliteModule
 }
 
 func SetConnStrGetter(getter dbConnectionStringGetter) {
-	mysqlModule.connStrGetter = getter
+	sqliteModule.connStrGetter = getter
 }
 
-func (this *MysqlModule) Init() error {
+func SetAutoCreateTable() {
+	sqliteModule.createTable = true
+}
+
+func (this *SqliteModule) Init() error {
 	if this.connStrGetter == nil {
 		return errors.New("connStrGetter not set")
 	}
 	for dbKey, mapItems := range this.modelMap {
-		db, err := sql.Open("mysql", this.connStrGetter.GetDbConnectionString(dbKey))
+		db, err := sql.Open("sqlite3", this.connStrGetter.GetDbConnectionString(dbKey))
 		if err != nil {
 			return err
 		}
@@ -75,7 +68,7 @@ func (this *MysqlModule) Init() error {
 		db.SetMaxIdleConns(10)
 		db.SetMaxOpenConns(100)
 		db.SetConnMaxLifetime(200 * time.Second)
-		dbMap := &gorp.DbMap{Db: db, Dialect: gorp.MySQLDialect{}}
+		dbMap := &gorp.DbMap{Db: db, Dialect: gorp.SqliteDialect{}}
 		if this.enableDbTrace {
 			dbMap.TraceOn("", &dbLogger{})
 		}
@@ -87,7 +80,10 @@ func (this *MysqlModule) Init() error {
 				return err
 			}
 			mi.model.SetModel(mi.model)
-			mi.model.SetFields(GetAllFieldsAsString(mi.obj))
+			mi.model.SetFields(model.GetAllFieldsAsString(mi.obj))
+		}
+		if this.createTable {
+			dbMap.CreateTablesIfNotExists()
 		}
 	}
 
@@ -96,12 +92,12 @@ func (this *MysqlModule) Init() error {
 		callback()
 	}
 
-	logrus.Info("mysql module inited")
+	logrus.Info("sqlite module inited")
 	return nil
 }
 
-func (this *MysqlModule) Stop() {
-	logrus.Info("Stopping mysql connects")
+func (this *SqliteModule) Stop() {
+	logrus.Info("Stopping sqlite connects")
 	for _, mapItems := range this.modelMap {
 		for _, mi := range mapItems {
 			err := mi.model.Db().Close()
@@ -111,30 +107,39 @@ func (this *MysqlModule) Stop() {
 			break
 		}
 	}
-	logrus.Info("Stopped mysql connects")
+	logrus.Info("Stopped sqlite connects")
 }
 
 // Register Register.
-func Register(dbKey string, model Model, obj interface{}) {
-	mapItems, ok := mysqlModule.modelMap[dbKey]
+func Register(dbKey string, model model.Model, obj interface{}) {
+	mapItems, ok := sqliteModule.modelMap[dbKey]
 	if ok {
 		for _, mi := range mapItems {
 			if model == mi.model {
 				return
 			}
-			mysqlModule.modelMap[dbKey] = append(mapItems, modelMapItem{model: model, obj: obj})
+			sqliteModule.modelMap[dbKey] = append(mapItems, modelMapItem{model: model, obj: obj})
 		}
 	} else {
 		mapItems := make([]modelMapItem, 0, 5)
-		mysqlModule.modelMap[dbKey] = append(mapItems, modelMapItem{model: model, obj: obj})
+		sqliteModule.modelMap[dbKey] = append(mapItems, modelMapItem{model: model, obj: obj})
 	}
 }
 
 // RegisterCallback RegisterCallback.
 func RegisterCallback(callback func()) {
-	if mysqlModule.inited {
+	if sqliteModule.inited {
 		callback()
 		return
 	}
-	mysqlModule.callbacks = append(mysqlModule.callbacks, callback)
+	sqliteModule.callbacks = append(sqliteModule.callbacks, callback)
+}
+
+// DbLogger DbLogger.
+type dbLogger struct {
+}
+
+// Printf Printf.
+func (this *dbLogger) Printf(format string, v ...interface{}) {
+	logrus.WithFields(logrus.Fields{"@type": "sqlite"}).Infof(format, v...)
 }
