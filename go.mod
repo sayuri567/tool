@@ -12,7 +12,7 @@ require (
 	github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible
 	github.com/lestrrat-go/strftime v1.0.4 // indirect
 	github.com/lib/pq v1.10.0 // indirect
-	github.com/mattn/go-sqlite3 v1.14.6 // indirect
+	github.com/mattn/go-sqlite3 v1.14.6
 	github.com/onsi/ginkgo v1.15.2 // indirect
 	github.com/onsi/gomega v1.11.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
