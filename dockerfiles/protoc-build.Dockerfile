@@ -20,6 +20,6 @@ RUN go get github.com/golang/protobuf/{proto,protoc-gen-go} github.com/favadi/pr
 # node
 RUN wget -O node.tar.gz https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz
 RUN tar -C /usr/local -zxf node.tar.gz && rm -f node.tar.gz && mv /usr/local/node-v${NODE_VERSION}-linux-x64 /usr/local/node
-RUN npm install -g protobufjs protoc-gen-ts grpc-tools grpc_tools_node_protoc_ts
+RUN npm install -g protobufjs protoc-gen-ts grpc-tools grpc_tools_node_protoc_ts protoc-gen-grpc
 
 CMD ["protoc"]
