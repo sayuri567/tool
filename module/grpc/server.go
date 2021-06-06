@@ -55,42 +55,24 @@ func (this *ServerModule) Init() error {
 	if this.config == nil {
 		return errors.New("grpc server config not set")
 	}
-	cert, err := tls.LoadX509KeyPair(this.config.ServerCertFile, this.config.ServerKeyFile)
-	if err != nil {
-		logrus.WithError(err).WithFields(logrus.Fields{"cert": this.config.ServerCertFile, "key": this.config.ServerKeyFile}).Error("failed to load cert file")
-		return err
+
+	opts := []grpc.ServerOption{}
+	if len(this.config.ServerCertFile) > 0 && len(this.config.ServerKeyFile) > 0 && len(this.config.CaCertFile) > 0 {
+		creds, err := this.genCreds()
+		if err != nil {
+			return err
+		}
+		opts = append(opts, creds)
 	}
 
-	certPool := x509.NewCertPool()
-	ca, err := ioutil.ReadFile(this.config.CaCertFile)
-	if err != nil {
-		logrus.WithError(err).WithFields(logrus.Fields{"cert": this.config.CaCertFile}).Error("failed to load ca file")
-		return err
-	}
-
-	if ok := certPool.AppendCertsFromPEM(ca); !ok {
-		err := errors.New("failed to append certs from pem")
-		logrus.WithError(err).Error("failed to append certs from pem")
-		return err
-	}
-
-	c := credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{cert},
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    certPool,
-	})
-
-	opts := []grpc.ServerOption{
-		grpc.Creds(c),
-		grpc.UnaryInterceptor(this.interceptor),
-	}
+	opts = append(opts, grpc.UnaryInterceptor(this.interceptor))
 
 	if len(this.config.ServerOptions) > 0 {
 		opts = append(opts, this.config.ServerOptions...)
 	}
 
 	this.server = grpc.NewServer(opts...)
-	if err = this.config.RegisterService(this.server); err != nil {
+	if err := this.config.RegisterService(this.server); err != nil {
 		logrus.WithError(err).Error("failed to register service")
 		return err
 	}
@@ -116,6 +98,34 @@ func (this *ServerModule) Stop() {
 	logrus.Info("Stopping grpcServer")
 	this.server.Stop()
 	logrus.Info("Stopped grpcServer")
+}
+
+func (this *ServerModule) genCreds() (grpc.ServerOption, error) {
+	cert, err := tls.LoadX509KeyPair(this.config.ServerCertFile, this.config.ServerKeyFile)
+	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{"cert": this.config.ServerCertFile, "key": this.config.ServerKeyFile}).Error("failed to load cert file")
+		return nil, err
+	}
+
+	certPool := x509.NewCertPool()
+	ca, err := ioutil.ReadFile(this.config.CaCertFile)
+	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{"cert": this.config.CaCertFile}).Error("failed to load ca file")
+		return nil, err
+	}
+
+	if ok := certPool.AppendCertsFromPEM(ca); !ok {
+		err := errors.New("failed to append certs from pem")
+		logrus.WithError(err).Error("failed to append certs from pem")
+		return nil, err
+	}
+
+	c := credentials.NewTLS(&tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    certPool,
+	})
+	return grpc.Creds(c), nil
 }
 
 func (this *ServerModule) interceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
