@@ -102,11 +102,14 @@ func CreateFile(path string, contents string, override ...bool) error {
 		dir = path[0:strings.LastIndex(path, "/")]
 	}
 
-	if _, err := os.Stat(dir); err != nil {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return err
+	if len(dir) > 0 {
+		if _, err := os.Stat(dir); err != nil {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return err
+			}
 		}
 	}
+
 	mod := os.O_CREATE | os.O_EXCL | os.O_WRONLY
 	if len(override) > 0 && override[0] {
 		mod = os.O_CREATE | os.O_WRONLY | os.O_TRUNC

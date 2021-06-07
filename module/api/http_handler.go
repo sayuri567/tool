@@ -23,13 +23,17 @@ type SaveOperation interface {
 
 // ServeHTTP
 func (this *httpHandler) ServeHTTP(c *gin.Context) {
-	var param = reflect.New(reflect.TypeOf(this.prototype).Elem())
-	err := c.Bind(param.Interface())
 	var logDatas map[string]interface{}
-
-	if this.module.config.AccessLog || this.module.config.SaveOperation != nil {
-		logDatas = this.getData(param)
+	var err error
+	var param interface{}
+	if this.prototype != nil {
+		param = reflect.New(reflect.TypeOf(this.prototype).Elem()).Interface()
+		err = c.Bind(param)
+		if this.module.config.AccessLog || this.module.config.SaveOperation != nil {
+			logDatas = this.getData(param)
+		}
 	}
+
 	if this.module.config.AccessLog {
 		logrus.WithFields(logrus.Fields{"uri": c.Request.RequestURI, "@type": "access", "params": logDatas, "method": c.Request.Method, "ip": c.ClientIP()}).Info("access log")
 	}
@@ -41,7 +45,7 @@ func (this *httpHandler) ServeHTTP(c *gin.Context) {
 		return
 	}
 
-	data, err := this.handler(c, param.Interface())
+	data, err := this.handler(c, param)
 	if c.IsAborted() {
 		return
 	}
@@ -55,9 +59,9 @@ func (this *httpHandler) ServeHTTP(c *gin.Context) {
 	c.JSON(http.StatusOK, output)
 }
 
-func (this *httpHandler) getData(param reflect.Value) map[string]interface{} {
+func (this *httpHandler) getData(param interface{}) map[string]interface{} {
 	// 敏感字段屏蔽，待优化
-	jsonDatas, _ := json.Marshal(param.Interface())
+	jsonDatas, _ := json.Marshal(param)
 	logDatas := map[string]interface{}{}
 	json.Unmarshal(jsonDatas, &logDatas)
 	for _, key := range this.module.sensitiveKeys {

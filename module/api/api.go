@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -141,7 +142,7 @@ func (this *ApiModule) Init() error {
 func (this *ApiModule) Run() error {
 	gorun.Go(func() {
 		err := this.server.ListenAndServe()
-		if err != nil {
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logrus.WithError(err).Error("failed to start gin")
 		}
 	})
