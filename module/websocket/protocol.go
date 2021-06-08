@@ -1,6 +1,10 @@
 package websocket
 
-import "google.golang.org/protobuf/proto"
+import (
+	"fmt"
+
+	"google.golang.org/protobuf/proto"
+)
 
 const ErrorMessageType uint32 = ^uint32(0)
 
@@ -30,4 +34,12 @@ func (this *Context) send(data proto.Message, err *Error, isEnd uint16) {
 type Error struct {
 	Code    uint32
 	Message string
+}
+
+func (this *Error) String() string {
+	return fmt.Sprintf("code: %v, message: %v", this.Code, this.Message)
+}
+
+func NewError(code uint32, msg string) *Error {
+	return &Error{Code: code, Message: msg}
 }
