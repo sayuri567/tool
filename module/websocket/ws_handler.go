@@ -14,11 +14,11 @@ type WsHandler struct {
 
 type handler struct {
 	msgType   uint32
-	handler   func(*Conn, proto.Message) (proto.Message, error)
+	handler   func(*Context, proto.Message) (proto.Message, *Error)
 	prototype proto.Message
 }
 
-func RegisterHandler(msgType uint32, msgHandler func(*Conn, proto.Message) (proto.Message, error), prototype proto.Message) {
+func RegisterHandler(msgType uint32, msgHandler func(*Context, proto.Message) (proto.Message, *Error), prototype proto.Message) {
 	websocketModule.wsHandler.handlers[msgType] = &handler{
 		msgType:   msgType,
 		handler:   msgHandler,

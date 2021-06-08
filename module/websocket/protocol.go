@@ -2,10 +2,32 @@ package websocket
 
 import "google.golang.org/protobuf/proto"
 
-type Message struct {
+const ErrorMessageType uint32 = ^uint32(0)
+
+type Context struct {
 	wsMegType int
-	MsgType   uint32
-	ReplyType uint32
-	Error     proto.Message
-	Data      proto.Message
+	conn      *Conn
+	requestId string
+	msgType   uint32
+	isEnd     uint16
+
+	Error *Error
+	Data  proto.Message
+}
+
+func (this *Context) SendClient(Data proto.Message) {
+	this.send(Data, nil, 0)
+}
+
+func (this *Context) SendError(err *Error) {
+	this.send(nil, err, 0)
+}
+
+func (this *Context) send(data proto.Message, err *Error, isEnd uint16) {
+	this.conn.Write(&Context{wsMegType: this.wsMegType, requestId: this.requestId, msgType: this.msgType, isEnd: isEnd, Data: data, Error: err})
+}
+
+type Error struct {
+	Code    uint32
+	Message string
 }

@@ -3,6 +3,7 @@ package websocket
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"sync"
 	"time"
 
@@ -17,14 +18,14 @@ type Conn struct {
 	Data      map[string]interface{}
 
 	conn      *websocket.Conn
-	writeChan chan *Message
+	writeChan chan *Context
 	closed    bool
 	done      chan struct{}
 	wg        sync.WaitGroup
 	once      sync.Once
 }
 
-func (this *Conn) Write(msg *Message) {
+func (this *Conn) Write(msg *Context) {
 	this.writeChan <- msg
 }
 
@@ -42,7 +43,7 @@ func (this *Conn) SetData(key string, data interface{}) {
 
 func (this *Conn) serveIO() {
 	this.done = make(chan struct{})
-	this.writeChan = make(chan *Message, 100)
+	this.writeChan = make(chan *Context, 100)
 	this.wg.Add(2)
 	go func() {
 		this.write()
@@ -73,6 +74,7 @@ func (this *Conn) close(err error) {
 	})
 }
 
+// header: 0-3:请求类型，4-5:是否有错误，6-7:是否结束本次请求，8-43:请求id
 func (this *Conn) read() {
 	for {
 		tp, msg, err := this.conn.ReadMessage()
@@ -81,30 +83,18 @@ func (this *Conn) read() {
 			break
 		}
 
-		var message = new(Message)
-		message.wsMegType = tp
-		message.MsgType = binary.LittleEndian.Uint32(msg[:4])
-		message.ReplyType = binary.LittleEndian.Uint32(msg[4:8])
-		if websocketModule.wsHandler.handlers[message.MsgType] != nil {
-			protoref := websocketModule.wsHandler.handlers[message.MsgType].prototype
-			if len(msg[8:]) > 0 && protoref != nil {
-				err = proto.Unmarshal(msg[8:], protoref)
-				if err != nil {
-					logrus.WithError(err).Error("failed to decode message")
-					continue
-				}
-			}
-			message.Data = protoref
-			gorun.Go(func(message *Message) {
-				reply, err := websocketModule.wsHandler.handlers[message.MsgType].handler(this, message.Data)
-				if reply != nil || err != nil {
-					replyType := message.MsgType
-					if message.ReplyType > 0 {
-						replyType = message.ReplyType
-					}
-					this.Write(&Message{wsMegType: message.wsMegType, MsgType: replyType, Error: nil, Data: reply})
-				}
-			}, message)
+		ctx, err := this.unmarshal(msg)
+		if err != nil {
+			logrus.WithError(err).Error("failed to decode message")
+			continue
+		}
+		ctx.wsMegType = tp
+		ctx.conn = this
+		if websocketModule.wsHandler.handlers[ctx.msgType] != nil {
+			gorun.Go(func(ctx *Context) {
+				reply, err := websocketModule.wsHandler.handlers[ctx.msgType].handler(ctx, ctx.Data)
+				ctx.send(reply, err, 1)
+			}, ctx)
 		}
 	}
 }
@@ -118,15 +108,12 @@ loop:
 			if msg == nil {
 				break loop
 			}
-			data, err := proto.Marshal(msg.Data)
+			buffer, err := this.marshal(msg)
 			if err != nil {
 				logrus.WithError(err).Error("failed to encode message")
+				continue
 			}
-
-			header := make([]byte, 8)
-			binary.LittleEndian.PutUint32(header[:4], msg.MsgType)
-			binary.LittleEndian.PutUint32(header[4:], msg.ReplyType)
-			err = this.conn.WriteMessage(msg.wsMegType, bytes.Join([][]byte{header, data}, []byte{}))
+			err = this.conn.WriteMessage(msg.wsMegType, buffer)
 			if err != nil {
 				logrus.WithError(err).Error("failed to write websocket message")
 				break loop
@@ -143,4 +130,49 @@ loop:
 	}
 	ticker.Stop()
 	this.close(nil)
+}
+
+func (this *Conn) marshal(ctx *Context) ([]byte, error) {
+	var data []byte
+	header := make([]byte, 8)
+	binary.LittleEndian.PutUint32(header[:4], ctx.msgType) // 请求类型
+	binary.LittleEndian.PutUint16(header[6:8], ctx.isEnd)  // 是否结束请求
+	header = append(header, []byte(ctx.requestId)...)      // 请求id
+	if ctx.Error == nil {
+		binary.LittleEndian.PutUint16(header[4:6], 0) // 是否有错误
+		buffer, err := proto.Marshal(ctx.Data)
+		if err != nil {
+			logrus.WithError(err).Error("failed to encode message")
+			return nil, err
+		}
+		data = bytes.Join([][]byte{header, buffer}, []byte{})
+	} else {
+		binary.LittleEndian.PutUint16(header[4:6], 1) // 是否有错误
+		errCode := make([]byte, 4)
+		binary.LittleEndian.PutUint32(errCode[:4], ctx.Error.Code)
+		data = bytes.Join([][]byte{header, errCode, []byte(ctx.Error.Message)}, []byte{})
+	}
+
+	return data, nil
+}
+
+func (this *Conn) unmarshal(msg []byte) (*Context, error) {
+	var ctx = new(Context)
+	if len(msg) < 44 {
+		return ctx, errors.New("invalid request")
+	}
+	ctx.msgType = binary.LittleEndian.Uint32(msg[:4]) // 请求类型
+	// hasError := binary.LittleEndian.Uint16(msg[4:6]) // 是否有错误
+	// isEnd := binary.LittleEndian.Uint16(msg[6:8]) // 是否结束请求
+	ctx.requestId = string(msg[8:44]) // 请求id
+	if websocketModule.wsHandler.handlers[ctx.msgType] != nil && websocketModule.wsHandler.handlers[ctx.msgType].prototype != nil {
+		protoref := websocketModule.wsHandler.handlers[ctx.msgType].prototype.ProtoReflect().New().Interface()
+		err := proto.Unmarshal(msg[44:], protoref)
+		if err != nil {
+			return nil, err
+		}
+		ctx.Data = protoref
+	}
+
+	return ctx, nil
 }

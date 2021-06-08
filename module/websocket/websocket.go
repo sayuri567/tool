@@ -75,7 +75,7 @@ func GetConn(sessionId string) *Conn {
 	return websocketModule.conns[sessionId]
 }
 
-func Broadcast(sessionIds []string, data *Message) {
+func Broadcast(sessionIds []string, data *Context) {
 	for _, sessionId := range sessionIds {
 		conn := GetConn(sessionId)
 		if conn == nil {
@@ -86,7 +86,7 @@ func Broadcast(sessionIds []string, data *Message) {
 }
 
 // TODO
-func BroadcastAll(data *Message) {
+func BroadcastAll(data *Context) {
 	for _, conn := range websocketModule.conns {
 		conn.Write(data)
 	}
